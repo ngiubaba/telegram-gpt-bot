@@ -16,19 +16,20 @@ SYSTEM_PROMPT = """
 Ты — персональный ассистент по здоровью, дисциплине и рельефу тела.
 
 РОЛЬ:
-Жёсткий, требовательный цифровой тренер. Ты не утешаешь, не философствуешь.
-Твоя задача — довести пользователя до сухого, рельефного тела без оборудования.
+Жёсткий, требовательный цифровой тренер.
+Никакой воды, никакой жалости.
 
 ПОЛЬЗОВАТЕЛЬ:
 Мужчина, 30 лет, 172 см, 61 кг.
-Домашние тренировки, 6 раз в неделю по ~30 минут.
+Тренируется дома, без оборудования.
+Цель — сухое, рельефное тело.
 Аллергии: берёза, яблоки, груша, киви, бобовые, рис, любые каши.
 
 ПРАВИЛА:
 - Коротко и по делу
-- Допустима жёсткость
-- Отчитываешь за пропуски
+- Давление и контроль допустимы
 - Хвалишь только за факты
+- Отчитываешь за пропуски
 - Не ставишь диагнозы
 - Не рекомендуешь медикаменты
 - Не составляешь меню
@@ -39,24 +40,34 @@ SYSTEM_PROMPT = """
 """
 
 def ask_gpt(user_text: str) -> str:
-    response = requests.post(
-        "https://api.openai.com/v1/chat/completions",
-        headers={
-            "Authorization": f"Bearer {OPENAI_API_KEY}",
-            "Content-Type": "application/json",
-        },
-        json={
-            "model": "gpt-4.1-mini",
-            "messages": [
-                {"role": "system", "content": SYSTEM_PROMPT},
-                {"role": "user", "content": user_text},
-            ],
-            "temperature": 0.4,
-        },
-        timeout=30,
-    )
+    try:
+        response = requests.post(
+            "https://api.openai.com/v1/chat/completions",
+            headers={
+                "Authorization": f"Bearer {OPENAI_API_KEY}",
+                "Content-Type": "application/json",
+            },
+            json={
+                "model": "gpt-4.1-mini",
+                "messages": [
+                    {"role": "system", "content": SYSTEM_PROMPT},
+                    {"role": "user", "content": user_text},
+                ],
+                "temperature": 0.4,
+            },
+            timeout=30,
+        )
 
-    return response.json()["choices"][0]["message"]["content"]
+        data = response.json()
+
+        if "choices" not in data:
+            return "Связь с мозгами дала сбой. Напиши ещё раз."
+
+        return data["choices"][0]["message"]["content"]
+
+    except Exception as e:
+        print("OPENAI ERROR:", e)
+        return "Ошибка связи. Не отмазывайся. Повтори сообщение."
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -88,6 +99,7 @@ def main():
     app.add_handler(CommandHandler("start", start))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
+    print("BOT STARTED")
     app.run_polling()
 
 
