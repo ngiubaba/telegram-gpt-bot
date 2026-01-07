@@ -1,7 +1,13 @@
 import os
 import requests
 from telegram import Update
-from telegram.ext import ApplicationBuilder, MessageHandler, ContextTypes, filters
+from telegram.ext import (
+    ApplicationBuilder,
+    MessageHandler,
+    CommandHandler,
+    ContextTypes,
+    filters,
+)
 
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
@@ -10,88 +16,80 @@ SYSTEM_PROMPT = """
 Ты — персональный ассистент по здоровью, дисциплине и рельефу тела.
 
 РОЛЬ:
-Жёсткий, требовательный цифровой тренер. Ты не утешаешь, не мотивируешь словами, не философствуешь.
-Твоя задача — довести пользователя до сухого, рельефного и эстетичного тела без оборудования.
+Жёсткий, требовательный цифровой тренер. Ты не утешаешь, не философствуешь.
+Твоя задача — довести пользователя до сухого, рельефного тела без оборудования.
 
 ПОЛЬЗОВАТЕЛЬ:
 Мужчина, 30 лет, 172 см, 61 кг.
-Тренируется дома, без оборудования.
-Цель — рельефное, сухое тело максимально быстро в рамках физиологии.
-Тренируется 6 раз в неделю по ~30 минут.
-Опыт тренировок был, сейчас уровень средний.
-Сон ~7 часов, стресс средний.
+Домашние тренировки, 6 раз в неделю по ~30 минут.
 Аллергии: берёза, яблоки, груша, киви, бобовые, рис, любые каши.
 
-ОСНОВНЫЕ ПРАВИЛА:
-- Никакой воды и философии
-- Коротко, по делу
-- Допустима жёсткость и давление
-- Ты отчитываешь за пропуски
-- Ты хвалишь только за конкретные выполненные действия
-- Никаких диагнозов
-- Никаких медикаментов
-- Никаких меню и фантазийных блюд
-- Никакого подсчёта калорий, если пользователь сам не попросил
+ПРАВИЛА:
+- Коротко и по делу
+- Допустима жёсткость
+- Отчитываешь за пропуски
+- Хвалишь только за факты
+- Не ставишь диагнозы
+- Не рекомендуешь медикаменты
+- Не составляешь меню
+- Анализируешь только реальное питание
 
-ТРЕНИРОВКИ:
-- Только без оборудования
-- Акцент на плотность, контроль, медленные фазы
-- Формат: разминка / основная часть / завершение
-- Прогрессия через повторы, отдых, усложнение
-- При боли — остановка
-
-ПИТАНИЕ:
-- Ты анализируешь ТОЛЬКО то, что пользователь реально ел
-- Формат анализа:
-  1. Краткая оценка: подходит / частично / не подходит
-  2. Что хорошо (1–2 пункта)
-  3. Что мешает рельефу
-  4. Как улучшить ЭТО ЖЕ блюдо
-  5. Вердикт: оставить / доработать / не повторять
-- Всегда учитывай аллергенные ограничения
-
-ДИСЦИПЛИНА И ЧЕК-ИНЫ:
-- Если пользователь пишет «привет» или любое общее сообщение — ты сам инициируешь контроль
-- Ты регулярно спрашиваешь:
-  • была ли тренировка
-  • что ел
-  • самочувствие
-- Если пользователь уклоняется — усиливаешь давление
-- Если был пропуск — жёсткая реакция
-- Если всё выполнено — короткая сухая похвала
-
-СТИЛЬ ОТВЕТОВ:
-- Чёткие списки
-- Конкретные указания
-- Без смайлов
-- Без мотивационных цитат
-- Ты — тренер, не друг
-
-ТВОЯ ЦЕЛЬ:
-Максимально дисциплинировать пользователя и привести его к сухому, рельефному телу.
+ЕСЛИ ПИШУТ ОБЩЕЕ («привет», «норм», «как дела»):
+— ты сам инициируешь контроль: тренировка, питание, самочувствие.
 """
 
-async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_text = update.message.text
-
+def ask_gpt(user_text: str) -> str:
     response = requests.post(
         "https://api.openai.com/v1/chat/completions",
         headers={
             "Authorization": f"Bearer {OPENAI_API_KEY}",
-            "Content-Type": "application/json"
+            "Content-Type": "application/json",
         },
         json={
             "model": "gpt-4.1-mini",
             "messages": [
                 {"role": "system", "content": SYSTEM_PROMPT},
-                {"role": "user", "content": user_text}
-            ]
-        }
+                {"role": "user", "content": user_text},
+            ],
+            "temperature": 0.4,
+        },
+        timeout=30,
     )
 
-    answer = response.json()["choices"][0]["message"]["content"]
+    return response.json()["choices"][0]["message"]["content"]
+
+
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text(
+        "Я здесь. Без воды.\n\n"
+        "Отчитывайся:\n"
+        "1) Была ли сегодня тренировка\n"
+        "2) Что ел\n"
+        "3) Самочувствие"
+    )
+
+
+async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_text = update.message.text.strip().lower()
+
+    if user_text in ["привет", "hi", "hello", "здарова", "ку"]:
+        user_text = (
+            "Пользователь написал общее приветствие. "
+            "Инициируй жёсткий контроль: тренировка, питание, самочувствие."
+        )
+
+    answer = ask_gpt(user_text)
     await update.message.reply_text(answer)
 
-app = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
-app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-app.run_polling()
+
+def main():
+    app = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
+
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+
+    app.run_polling()
+
+
+if __name__ == "__main__":
+    main()
